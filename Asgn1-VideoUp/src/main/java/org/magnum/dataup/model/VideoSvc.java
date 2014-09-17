@@ -17,27 +17,41 @@
  */
 package org.magnum.dataup.model;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
+import org.magnum.dataup.VideoFileManager;
+import org.magnum.dataup.model.VideoStatus.VideoState;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.multipart.MultipartFile;
 
 @Controller
 public class VideoSvc {
 
 	private static final String VIDEO_SVC_PATH = "/video";
+	
+	private static final String VIDEO_DATA_PATH = VIDEO_SVC_PATH + "/{id}/data";
+	
 	private static final AtomicLong currentId = new AtomicLong(0L);
+	
 	private Map<Long, Video> videos = new HashMap<Long, Video>();
+	
+	private VideoFileManager videoDataMgr;
 
 	@RequestMapping(value = VIDEO_SVC_PATH, method = RequestMethod.GET)
 	public @ResponseBody
@@ -52,6 +66,42 @@ public class VideoSvc {
 		v.setDataUrl(this.getDataUrl(v.getId()));
 		return v;
 	}
+	
+	@RequestMapping(value = VIDEO_DATA_PATH, method = RequestMethod.POST)
+	public @ResponseBody
+	VideoStatus setVideoData(@PathVariable("id") long videoID, @RequestParam("data") MultipartFile videoData , HttpServletResponse response){
+		 try {
+			if( videos.containsKey(videoID)){
+				Video newVideo = videos.get(videoID);
+				videoDataMgr = VideoFileManager.get();
+				this.saveNewVideo(newVideo, videoData, response );
+				return new VideoStatus(VideoState.READY);				
+			} else {
+				response.setStatus(HttpStatus.NOT_FOUND.value());
+				return new VideoStatus(null);
+			}
+						
+		} catch (IOException e) {
+			response.setStatus(HttpStatus.NOT_FOUND.value());
+			return new VideoStatus(null);
+		}
+	}
+	
+	@RequestMapping(value = VIDEO_DATA_PATH, method = RequestMethod.GET)
+	public @ResponseBody
+	void getData(@PathVariable("id") long videoID, HttpServletResponse response){		
+			try {
+				if( videos.containsKey(videoID)){
+					Video newVideo = videos.get(videoID);
+					this.serveNewVideo(newVideo, response);				
+				} else {
+					response.setStatus(HttpStatus.NOT_FOUND.value());
+				}			
+			} catch (IOException e) {
+				response.setStatus(HttpStatus.NOT_FOUND.value());
+			}
+		}
+	
 
 	public Video save(Video entity) {
 
@@ -86,4 +136,14 @@ public class VideoSvc {
 		      + ((request.getServerPort() != 80) ? ":"+request.getServerPort() : "");
 		   return base;
 		}
+  	
+  	
+  	public void saveNewVideo(Video v, MultipartFile videoData, HttpServletResponse response) throws IOException {
+        videoDataMgr.saveVideoData(v, videoData.getInputStream());
+   }
+  	
+  	public void serveNewVideo(Video v, HttpServletResponse response) throws IOException  {
+        videoDataMgr.copyVideoData(v, response.getOutputStream());
+   }
+  	
 }
